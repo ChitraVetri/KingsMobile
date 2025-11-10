@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:13
+    container_name: kings-mobile-db
+    restart: always
+    environment:
+      POSTGRES_USER: kings_user
+      POSTGRES_PASSWORD: kings_password
+      POSTGRES_DB: kings_mobile_db
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

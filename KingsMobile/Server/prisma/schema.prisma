@@ -1,0 +1,374 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ENUMS
+
+enum UserRole {
+  ADMIN
+  SALES_STAFF
+  TECHNICIAN
+}
+
+enum RepairStatus {
+  RECEIVED
+  IN_PROGRESS
+  COMPLETED
+  DELIVERED
+}
+
+enum PaymentMode {
+  CASH
+  UPI
+  CARD
+}
+
+enum LocationType {
+  STORE           // Retail storefront
+  WAREHOUSE       // Storage facility
+  REPAIR_CENTER   // Service location
+  KIOSK          // Small retail point
+}
+
+enum ProductType {
+  MOBILE_PHONE
+  TABLET
+  ACCESSORY
+  REPAIR_PART
+}
+
+enum DeviceCondition {
+  NEW           // Brand new, unopened
+  USED          // Previously owned, good condition
+  REFURBISHED   // Restored to like-new condition
+  DAMAGED       // Has defects, needs repair
+  DEFECTIVE     // Non-functional
+}
+
+enum DeviceStatus {
+  IN_STOCK      // Available for sale
+  RESERVED      // Held for customer
+  SOLD          // Completed sale
+  IN_REPAIR     // Being repaired
+  TRANSFERRED   // Moving between locations
+  RETURNED      // Customer return
+  DISPOSED      // End of lifecycle
+}
+
+enum HistoryEvent {
+  RECEIVED       // Item received into inventory
+  TRANSFERRED    // Moved between locations
+  SOLD           // Item sold to customer
+  RETURNED       // Customer return
+  CONDITION_CHANGED // Condition updated
+  REPAIRED       // Repair completed
+  DAMAGED        // Damage reported
+  DISPOSED       // End of lifecycle
+  RESERVED       // Reserved for customer
+  UNRESERVED     // Reservation cancelled
+}
+
+// MODELS
+
+// Master Data Tables for Dropdowns
+model MasterBrand {
+  id          String        @id @default(cuid())
+  name        String        @unique
+  description String?
+  models      MasterModel[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model MasterModel {
+  id          String      @id @default(cuid())
+  name        String
+  brandId     String
+  brand       MasterBrand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  description String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@unique([name, brandId])
+}
+
+model MasterProductName {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model MasterPartName {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model MasterCategory {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// New Hierarchical Inventory Tables
+
+model Location {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  address     String?
+  type        LocationType
+  isActive    Boolean  @default(true)
+  
+  // Relationships
+  stocks      LocationStock[]
+  serializedItems SerializedItem[]
+  deviceHistoryFrom DeviceHistory[] @relation("DeviceHistoryFromLocation")
+  deviceHistoryTo   DeviceHistory[] @relation("DeviceHistoryToLocation")
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  name        String   // From MasterProductName
+  category    String   // From MasterCategory
+  brand       String   // From MasterBrand
+  model       String   // From MasterModel
+  description String?
+  isActive    Boolean  @default(true)
+  
+  // Product specifications
+  productType ProductType
+  
+  // Relationships
+  variants    ProductVariant[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@unique([name, brand, model])
+}
+
+model ProductVariant {
+  id          String   @id @default(cuid())
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId   String
+  
+  // Variant specifications
+  color       String?
+  storage     String?  // "128GB", "256GB", etc.
+  carrier     String?  // "Unlocked", "Verizon", "AT&T", etc.
+  sku         String   @unique
+  
+  // Pricing
+  purchasePrice Float
+  sellingPrice  Float
+  gstRate      Float   @default(18)
+  
+  // Inventory settings
+  lowStockThreshold Int @default(5)
+  
+  // Relationships
+  serializedItems SerializedItem[]
+  locationStocks  LocationStock[]
+  saleItems      SaleItem[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@unique([productId, color, storage, carrier])
+}
+
+model SerializedItem {
+  id          String         @id @default(cuid())
+  variant     ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  variantId   String
+  
+  // Serial identification
+  serialNumber String?       @unique
+  imei        String?        @unique
+  barcode     String?        @unique
+  
+  // Device state
+  condition   DeviceCondition
+  status      DeviceStatus
+  
+  // Location tracking
+  location    Location       @relation(fields: [locationId], references: [id])
+  locationId  String
+  
+  // Additional info
+  notes       String?
+  
+  // Relationships
+  history     DeviceHistory[]
+  saleItems   SaleItem[]
+  
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+}
+
+model LocationStock {
+  id               String         @id @default(cuid())
+  variant          ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  variantId        String
+  location         Location       @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  locationId       String
+  
+  // Stock quantities
+  quantity         Int            @default(0)
+  reservedQuantity Int            @default(0)
+  
+  // Calculated fields (updated by triggers/functions)
+  availableQuantity Int           @default(0) // quantity - reservedQuantity
+  
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  
+  @@unique([variantId, locationId])
+}
+
+model DeviceHistory {
+  id             String         @id @default(cuid())
+  serializedItem SerializedItem @relation(fields: [serializedItemId], references: [id], onDelete: Cascade)
+  serializedItemId String
+  
+  // Event details
+  event          HistoryEvent
+  description    String?
+  
+  // Context
+  fromLocation   Location?      @relation("DeviceHistoryFromLocation", fields: [fromLocationId], references: [id])
+  fromLocationId String?
+  toLocation     Location?      @relation("DeviceHistoryToLocation", fields: [toLocationId], references: [id])
+  toLocationId   String?
+  
+  // User tracking
+  user           User           @relation(fields: [userId], references: [id])
+  userId         String
+  
+  // Additional data (JSON for flexibility)
+  metadata       Json?
+  
+  createdAt      DateTime       @default(now())
+}
+
+model User {
+  id        String     @id @default(cuid())
+  username  String     @unique
+  password  String
+  role      UserRole   @default(SALES_STAFF)
+  repairs   RepairJob[]
+  deviceHistory DeviceHistory[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model RetailProduct {
+  id                 String     @id @default(cuid())
+  name               String
+  category           String
+  brand              String
+  model              String
+  variants           Json       // e.g., {"color": "Black", "storage": "128GB"}
+  imei               String?    @unique
+  purchasePrice      Float
+  sellingPrice       Float
+  gstRate            Float      @default(18)
+  quantity           Int
+  barcode            String?    @unique
+  lowStockThreshold  Int        @default(5)
+  saleItems          SaleItem[]
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+}
+
+model RepairPart {
+  id                 String            @id @default(cuid())
+  name               String
+  partNumber         String?           @unique
+  compatibleModels   String            // JSON string for compatible models
+  costPrice          Float
+  quantity           Int
+  lowStockThreshold  Int               @default(5)
+  repairs            RepairPartUsage[]
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+}
+
+model Customer {
+  id         String      @id @default(cuid())
+  name       String
+  phone      String      @unique
+  repairJobs RepairJob[]
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+}
+
+model RepairJob {
+  id             String            @id @default(cuid())
+  customer       Customer          @relation(fields: [customerId], references: [id])
+  customerId     String
+  deviceInfo     String
+  reportedIssue  String
+  technician     User?             @relation(fields: [technicianId], references: [id])
+  technicianId   String?
+  status         RepairStatus      @default(RECEIVED)
+  laborCost      Float             @default(0)
+  totalCost      Float             @default(0)
+  partsUsed      RepairPartUsage[]
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+}
+
+model RepairPartUsage {
+  id           String     @id @default(cuid())
+  repairJob    RepairJob  @relation(fields: [repairJobId], references: [id])
+  repairJobId  String
+  repairPart   RepairPart @relation(fields: [repairPartId], references: [id])
+  repairPartId String
+  quantityUsed Int
+  createdAt    DateTime   @default(now())
+}
+
+model Sale {
+  id          String      @id @default(cuid())
+  totalAmount Float
+  gstAmount   Float
+  paymentMode PaymentMode
+  items       SaleItem[]
+  createdAt   DateTime    @default(now())
+}
+
+model SaleItem {
+  id              String          @id @default(cuid())
+  sale            Sale            @relation(fields: [saleId], references: [id])
+  saleId          String
+  
+  // Can link to either variant (for non-serialized) or specific serialized item
+  variant         ProductVariant? @relation(fields: [variantId], references: [id])
+  variantId       String?
+  serializedItem  SerializedItem? @relation(fields: [serializedItemId], references: [id])
+  serializedItemId String?
+  
+  // Legacy support - keep for backward compatibility during migration
+  product         RetailProduct? @relation(fields: [productId], references: [id])
+  productId       String?
+  
+  quantity        Int
+  priceAtSale     Float
+  gstAtSale       Float
+}
+

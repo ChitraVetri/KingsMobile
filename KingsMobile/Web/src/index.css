@@ -1,0 +1,17 @@
+/* Test styles to ensure CSS is loading */
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+/* Custom styles */
+.btn-primary {
+  background-color: #2563eb;
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  transition: background-color 0.2s;
+}
+
+.btn-primary:hover {
+  background-color: #1d4ed8;
+}
